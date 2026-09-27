@@ -88,7 +88,7 @@ Anda adalah Senior Crypto Analyst. Buatkan ringkasan eksekutif singkat dan tajam
 Berikan analisis mengenai sentimen pasar saat ini (Bullish/Bearish/Neutral) dan narasi utama yang sedang berkembang.
 """
         completion = client.chat.completions.create(
-            model="llama3-8b-8192",
+            model="openai/gpt-oss-20b",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7,
         )
