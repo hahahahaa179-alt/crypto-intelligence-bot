@@ -71,7 +71,7 @@ def generate_groq_report(raw_data):
         client = Groq(api_key=GROQ_API_KEY.strip())
         
         prompt = f"""
-Anda adalah Senior Crypto Analyst. Buatkan ringkasan eksekutif singkat dan tajam (maksimal 3 paragraf) berdasarkan data berikut:
+Anda adalah Senior Crypto Analyst. Buatkan ringkasan singkat, padat, dan singkat (maksimal 2 paragraf pendek) berdasarkan data berikut:
 
 1. KINERJA PASAR UTAMA:
 {raw_data.get('prices')}
@@ -85,12 +85,13 @@ Anda adalah Senior Crypto Analyst. Buatkan ringkasan eksekutif singkat dan tajam
 4. HEADLINE BERITA:
 {raw_data.get('news')}
 
-Berikan analisis mengenai sentimen pasar saat ini (Bullish/Bearish/Neutral) dan narasi utama yang sedang berkembang.
+Berikan analisis mengenai sentimen pasar saat ini (Bullish/Bearish/Neutral) dan kesimpulan ringkas.
 """
         completion = client.chat.completions.create(
             model="openai/gpt-oss-20b",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7,
+            max_tokens=500
         )
         return completion.choices[0].message.content
     except Exception as e:
@@ -102,13 +103,17 @@ def send_to_discord(report):
         print("[ERROR] DISCORD_WEBHOOK_URL tidak ditemukan.")
         return
 
+    # Mencegah error status 400 jika teks melebihi 2000 karakter batas Discord
+    if len(report) > 1900:
+        report = report[:1900] + "\n\n*(Laporan dipotong karena batas karakter Discord)*"
+
     payload = {"content": report}
     try:
         res = requests.post(DISCORD_WEBHOOK_URL.strip(), json=payload, timeout=10)
         if res.status_code in [200, 204]:
             print("[SUCCESS] Pesan berhasil dikirim ke Discord!")
         else:
-            print(f"[ERROR] Gagal mengirim ke Discord: Status {res.status_code}")
+            print(f"[ERROR] Gagal mengirim ke Discord: Status {res.status_code} - {res.text}")
     except Exception as e:
         print(f"[ERROR] Gagal mengirim ke Discord: {e}")
 
