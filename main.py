@@ -2,6 +2,7 @@ import os
 import requests
 import feedparser
 from dotenv import load_dotenv
+from groq import Groq
 
 load_dotenv()
 
@@ -11,7 +12,6 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 COINGECKO_PRICES_URL = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana&vs_currencies=usd&include_24hr_change=true"
 COINGECKO_TRENDING_URL = "https://api.coingecko.com/api/v3/search/trending"
 DEFILLAMA_TVL_URL = "https://api.llama.fi/protocols"
-GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 RSS_FEEDS = {
     "CoinTelegraph": "https://cointelegraph.com/rss",
@@ -67,7 +67,10 @@ def generate_groq_report(raw_data):
         print("[ERROR] GROQ_API_KEY tidak ditemukan.")
         return None
 
-    prompt = f"""
+    try:
+        client = Groq(api_key=GROQ_API_KEY.strip())
+        
+        prompt = f"""
 Anda adalah Senior Crypto Analyst. Buatkan ringkasan eksekutif singkat dan tajam (maksimal 3 paragraf) berdasarkan data berikut:
 
 1. KINERJA PASAR UTAMA:
@@ -83,23 +86,13 @@ Anda adalah Senior Crypto Analyst. Buatkan ringkasan eksekutif singkat dan tajam
 {raw_data.get('news')}
 
 Berikan analisis mengenai sentimen pasar saat ini (Bullish/Bearish/Neutral) dan narasi utama yang sedang berkembang.
-    """
-
-    headers = {
-        "Authorization": f"Bearer {GROQ_API_KEY.strip()}",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "model": "llama-3.1-8b-instant",
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.7
-    }
-
-    try:
-        res = requests.post(GROQ_API_URL, headers=headers, json=payload, timeout=20)
-        res.raise_for_status()
-        data = res.json()
-        return data['choices'][0]['message']['content']
+"""
+        completion = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+        )
+        return completion.choices[0].message.content
     except Exception as e:
         print(f"[ERROR] Gagal memproses prompt di Groq API: {e}")
         return None
