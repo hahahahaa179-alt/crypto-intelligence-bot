@@ -3,13 +3,11 @@ import requests
 import feedparser
 from dotenv import load_dotenv
 
-# Load environment variables
 load_dotenv()
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-# API Endpoints
 COINGECKO_PRICES_URL = "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana&vs_currencies=usd&include_24hr_change=true"
 COINGECKO_TRENDING_URL = "https://api.coingecko.com/api/v3/search/trending"
 DEFILLAMA_TVL_URL = "https://api.llama.fi/protocols"
@@ -17,158 +15,112 @@ GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 
 RSS_FEEDS = {
     "CoinTelegraph": "https://cointelegraph.com/rss",
-    "Decrypt": "https://decrypt.co/feed",
-    "CoinDesk": "https://www.coindesk.com/arc/outboundfeeds/rss/",
-    "BitcoinMagazine": "https://bitcoinmagazine.com/.rss/full/"
+    "CoinDesk": "https://www.coindesk.com/arc/outboundfeeds/rss/"
 }
 
-
 def fetch_crypto_prices():
-    """Mengambil data harga & perubahan 24 jam untuk BTC, ETH, dan SOL."""
     try:
-        response = requests.get(COINGECKO_PRICES_URL, timeout=10)
-        response.raise_for_status()
-        return response.json()
+        res = requests.get(COINGECKO_PRICES_URL, timeout=10).json()
+        btc = res.get('bitcoin', {})
+        eth = res.get('ethereum', {})
+        sol = res.get('solana', {})
+        return (
+            f"• **BTC**: ${btc.get('usd', 0):,} ({btc.get('usd_24h_change', 0):.2f}%)\n"
+            f"• **ETH**: ${eth.get('usd', 0):,} ({eth.get('usd_24h_change', 0):.2f}%)\n"
+            f"• **SOL**: ${sol.get('usd', 0):,} ({sol.get('usd_24h_change', 0):.2f}%)"
+        )
     except Exception as e:
-        print(f"[ERROR] Gagal mengambil data harga CoinGecko: {e}")
-        return None
-
+        return f"Gagal mengambil data harga: {e}"
 
 def fetch_trending_coins():
-    """Mengambil daftar koin yang sedang trending di CoinGecko."""
     try:
-        response = requests.get(COINGECKO_TRENDING_URL, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-        trending_list = [item['item']['symbol'].upper() for item in data.get('coins', [])[:5]]
-        return trending_list
+        res = requests.get(COINGECKO_TRENDING_URL, timeout=10).json()
+        coins = res.get('coins', [])[:5]
+        trending_list = [f"• {c['item']['name']} ({c['item']['symbol']})" for c in coins]
+        return "\n".join(trending_list) if trending_list else "Tidak ada data trending."
     except Exception as e:
-        print(f"[ERROR] Gagal mengambil data trending CoinGecko: {e}")
-        return []
-
+        return f"Gagal mengambil data trending: {e}"
 
 def fetch_top_tvl_protocols():
-    """Mengambil Top 5 Protokol DeFi berdasarkan TVL dari DefiLlama."""
     try:
-        response = requests.get(DEFILLAMA_TVL_URL, timeout=10)
-        response.raise_for_status()
-        protocols = response.json()
-        # Urutkan berdasarkan TVL tertinggi
-        sorted_protocols = sorted(protocols, key=lambda x: x.get('tvl', 0), reverse=True)[:5]
-        tvl_data = [
-            {"name": p.get('name'), "tvl_usd": f"${p.get('tvl', 0):,.0f}", "chain": p.get('chain')}
-            for p in sorted_protocols
-        ]
-        return tvl_data
+        res = requests.get(DEFILLAMA_TVL_URL, timeout=10).json()
+        valid_protocols = [p for p in res if isinstance(p, dict) and p.get('tvl') is not None]
+        sorted_protocols = sorted(valid_protocols, key=lambda x: x.get('tvl', 0), reverse=True)[:3]
+        tvl_list = [f"• **{p.get('name')}**: ${p.get('tvl', 0):,.0f}" for p in sorted_protocols]
+        return "\n".join(tvl_list) if tvl_list else "Tidak ada data TVL."
     except Exception as e:
-        print(f"[ERROR] Gagal mengambil data TVL DefiLlama: {e}")
-        return []
-
+        return f"Gagal mengambil data TVL DefiLlama: {e}"
 
 def fetch_rss_news():
-    """Mengambil berita terbaru dari berbagai sumber RSS."""
     news_items = []
     for source, url in RSS_FEEDS.items():
         try:
             feed = feedparser.parse(url)
-            for entry in feed.entries[:2]:  # Ambil 2 berita teratas per sumber
-                news_items.append({
-                    "source": source,
-                    "title": entry.title,
-                    "link": entry.link
-                })
-        except Exception as e:
-            print(f"[WARN] Gagal mengambil RSS dari {source}: {e}")
-    return news_items
-
+            for entry in feed.entries[:2]:
+                news_items.append(f"[{source}] {entry.title}")
+        except Exception:
+            continue
+    return "\n".join(news_items) if news_items else "Tidak ada berita terbaru."
 
 def generate_groq_report(raw_data):
-    """Mengirim data mentah ke Groq API untuk menghasilkan ringkasan AI."""
     if not GROQ_API_KEY:
-        raise ValueError("GROQ_API_KEY tidak ditemukan di environment variables.")
+        print("[ERROR] GROQ_API_KEY tidak ditemukan.")
+        return None
 
-    headers = {
-        "Authorization": f"Bearer {GROQ_API_KEY}",
-        "Content-Type": "application/json"
-    }
+    prompt = f"""
+Anda adalah Senior Crypto Analyst. Buatkan ringkasan eksekutif singkat dan tajam (maksimal 3 paragraf) berdasarkan data berikut:
 
-    system_prompt = (
-        "Anda adalah seorang Senior Crypto Intelligence Analyst. Tugas Anda adalah mengolah "
-        "data pasar crypto mentah menjadi laporan intelijen eksekutif bernama "
-        "'ALL-IN-ONE CRYPTO ALPHA REPORT'. Laporan harus ditulis dalam Bahasa Indonesia "
-        "berformat Markdown lengkap dengan emoji yang relevan, ringkas, tajam, dan mudah dibaca."
-    )
-
-    user_prompt = f""" Berikut adalah data pasar crypto terbaru:
-
---- DATA HARGA UTAMA ---
+1. KINERJA PASAR UTAMA:
 {raw_data.get('prices')}
 
---- KOIN TRENDING (COINGECKO) ---
+2. KOIN TRENDING:
 {raw_data.get('trending')}
 
---- TOP 5 DEFI PROTOCOL BY TVL (DEFILLAMA) ---
+3. TOP DEFI PROTOCOLS (TVL):
 {raw_data.get('tvl')}
 
---- BERITA KRIPTO TERBARU ---
+4. HEADLINE BERITA:
 {raw_data.get('news')}
 
-Format Laporan yang Diinginkan:
-# 🚀 ALL-IN-ONE CRYPTO ALPHA REPORT
+Berikan analisis mengenai sentimen pasar saat ini (Bullish/Bearish/Neutral) dan narasi utama yang sedang berkembang.
+    """
 
-### 📊 Ringkasan Pasar & Harga
-- Berikan insight singkat pergerakan BTC, ETH, SOL.
-
-### 🔥 Trending Coins & DeFi TVL
-- Rangkum koin trending dan tren TVL protokol DeFi.
-
-### 📰 Berita Kunci & Sentimen Pasar
-- Buat 3-4 poin ringkasan berita terpenting dan dampaknya pada pasar.
-
-### 💡 Kesimpulan Analis (Alpha Take)
-- Analisis singkat sentimen pasar (Bullish/Bearish/Neutral) & rekomendasi perhatian fokus trader.
-"""
-
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY.strip()}",
+        "Content-Type": "application/json"
+    }
     payload = {
         "model": "llama-3.1-8b-instant",
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ],
-        "temperature": 0.5,
-        "max_tokens": 1000
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.7
     }
 
     try:
-        response = requests.post(GROQ_API_URL, json=payload, headers=headers, timeout=30)
-        response.raise_for_status()
-        result = response.json()
-        return result['choices'][0]['message']['content']
+        res = requests.post(GROQ_API_URL, headers=headers, json=payload, timeout=20)
+        res.raise_for_status()
+        data = res.json()
+        return data['choices'][0]['message']['content']
     except Exception as e:
         print(f"[ERROR] Gagal memproses prompt di Groq API: {e}")
         return None
 
-
-def send_to_discord(content):
-    """Mengirimkan laporan akhir ke Discord Webhook."""
+def send_to_discord(report):
     if not DISCORD_WEBHOOK_URL:
-        raise ValueError("DISCORD_WEBHOOK_URL tidak ditemukan di environment variables.")
+        print("[ERROR] DISCORD_WEBHOOK_URL tidak ditemukan.")
+        return
 
-    chunk_size = 1900
-    chunks = [content[i:i + chunk_size] for i in range(0, len(content), chunk_size)]
-
-    for chunk in chunks:
-        payload = {"content": chunk}
-        try:
-            response = requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=10)
-            response.raise_for_status()
-        except Exception as e:
-            print(f"[ERROR] Gagal mengirim pesan ke Discord Webhook: {e}")
-
+    payload = {"content": report}
+    try:
+        res = requests.post(DISCORD_WEBHOOK_URL.strip(), json=payload, timeout=10)
+        if res.status_code in [200, 204]:
+            print("[SUCCESS] Pesan berhasil dikirim ke Discord!")
+        else:
+            print(f"[ERROR] Gagal mengirim ke Discord: Status {res.status_code}")
+    except Exception as e:
+        print(f"[ERROR] Gagal mengirim ke Discord: {e}")
 
 def main():
     print("[INFO] Mengumpulkan data pasar crypto...")
-    
     prices = fetch_crypto_prices()
     trending = fetch_trending_coins()
     tvl = fetch_top_tvl_protocols()
@@ -182,15 +134,27 @@ def main():
     }
 
     print("[INFO] Menganalisis data dengan Groq AI (Llama 3.1 8B)...")
-    report = generate_groq_report(raw_data)
+    ai_summary = generate_groq_report(raw_data)
 
-    if report:
-        print("[INFO] Mengirimkan laporan ke Discord Webhook...")
+    if ai_summary:
+        report = f"""🚀 **ALL-IN-ONE CRYPTO ALPHA REPORT** 🚀
+
+📊 **PASAR UTAMA:**
+{prices}
+
+🔥 **TRENDING COINS:**
+{trending}
+
+🏦 **TOP DEFI TVL:**
+{tvl}
+
+🤖 **ANALISIS & SENTIMEN AI:**
+{ai_summary}
+"""
+        print("[INFO] Mengirimkan laporan ke Discord...")
         send_to_discord(report)
-        print("[SUCCESS] Laporan Crypto Alpha berhasil dikirim!")
     else:
         print("[FAIL] Gagal membuat laporan AI.")
-
 
 if __name__ == "__main__":
     main()
