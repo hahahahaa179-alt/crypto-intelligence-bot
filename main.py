@@ -88,7 +88,7 @@ Anda adalah Senior Crypto Analyst. Buatkan ringkasan eksekutif singkat dan tajam
 Berikan analisis mengenai sentimen pasar saat ini (Bullish/Bearish/Neutral) dan narasi utama yang sedang berkembang.
 """
         completion = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
+            model="llama3-8b-8192",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7,
         )
@@ -126,7 +126,7 @@ def main():
         "news": news
     }
 
-    print("[INFO] Menganalisis data dengan Groq AI (Llama 3.1 8B)...")
+    print("[INFO] Menganalisis data dengan Groq AI...")
     ai_summary = generate_groq_report(raw_data)
 
     if ai_summary:
